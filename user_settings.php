@@ -11,9 +11,55 @@ $user_name = $_SESSION['user_name'];
 $user_role = $_SESSION['user_role'];
 $user_email = $_SESSION['user_email'];
 
+require_once __DIR__ . '/db_connect.php'; // include DB connection
+
+// Load current user record and settings
+$user_settings = [];
+try {
+    if ($user_role === 'tutor') {
+        $stmt = $pdo->prepare("SELECT settings FROM tutors WHERE email = ? LIMIT 1");
+    } else {
+        $stmt = $pdo->prepare("SELECT settings FROM students WHERE email = ? LIMIT 1");
+    }
+    $stmt->execute([$user_email]);
+    $row = $stmt->fetch();
+    if ($row && !empty($row['settings'])) {
+        $user_settings = json_decode($row['settings'], true);
+        if (!is_array($user_settings)) $user_settings = [];
+    }
+} catch (Exception $e) {
+    // ignore for now or log
+    $user_settings = [];
+}
+
 // Handle settings update
 if ($_POST) {
-    $success_message = "Settings updated successfully!";
+    // Collect posted settings safely
+    $settings = [
+        'email_notifications' => isset($_POST['email_notifications']) ? true : false,
+        'push_notifications' => isset($_POST['push_notifications']) ? true : false,
+        'session_reminders' => isset($_POST['session_reminders']) ? true : false,
+        'profile_visibility' => isset($_POST['profile_visibility']) ? true : false,
+        'show_online_status' => isset($_POST['show_online_status']) ? true : false,
+        'allow_messages' => isset($_POST['allow_messages']) ? true : false,
+        'theme' => isset($_POST['theme']) ? $_POST['theme'] : 'light',
+        'language' => isset($_POST['language']) ? $_POST['language'] : 'en',
+    ];
+
+    // Save settings JSON into students or tutors table
+    try {
+        if ($user_role === 'tutor') {
+            $update = $pdo->prepare("UPDATE tutors SET settings = ? WHERE email = ?");
+        } else {
+            $update = $pdo->prepare("UPDATE students SET settings = ? WHERE email = ?");
+        }
+        $update->execute([json_encode($settings), $user_email]);
+        $success_message = "Settings updated successfully!";
+        // update local copy
+        $user_settings = $settings;
+    } catch (Exception $e) {
+        $success_message = "Failed to save settings.";
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -78,7 +124,7 @@ if ($_POST) {
                             <div class="setting-group">
                                 <div class="setting-item">
                                     <label class="switch">
-                                        <input type="checkbox" name="email_notifications" checked>
+                                        <input type="checkbox" name="email_notifications" <?php echo isset($user_settings['email_notifications']) && $user_settings['email_notifications'] ? 'checked' : ''; ?>>
                                         <span class="slider"></span>
                                     </label>
                                     <div class="setting-info">
@@ -89,7 +135,7 @@ if ($_POST) {
                                 
                                 <div class="setting-item">
                                     <label class="switch">
-                                        <input type="checkbox" name="push_notifications" checked>
+                                        <input type="checkbox" name="push_notifications" <?php echo isset($user_settings['push_notifications']) && $user_settings['push_notifications'] ? 'checked' : ''; ?>>
                                         <span class="slider"></span>
                                     </label>
                                     <div class="setting-info">
@@ -100,7 +146,7 @@ if ($_POST) {
                                 
                                 <div class="setting-item">
                                     <label class="switch">
-                                        <input type="checkbox" name="session_reminders">
+                                        <input type="checkbox" name="session_reminders" <?php echo isset($user_settings['session_reminders']) && $user_settings['session_reminders'] ? 'checked' : ''; ?>>
                                         <span class="slider"></span>
                                     </label>
                                     <div class="setting-info">
@@ -109,7 +155,6 @@ if ($_POST) {
                                     </div>
                                 </div>
                             </div>
-                        </form>
                     </div>
                     
                     <div class="settings-section">
@@ -118,7 +163,7 @@ if ($_POST) {
                             <div class="setting-group">
                                 <div class="setting-item">
                                     <label class="switch">
-                                        <input type="checkbox" name="profile_visibility" checked>
+                                        <input type="checkbox" name="profile_visibility" <?php echo isset($user_settings['profile_visibility']) && $user_settings['profile_visibility'] ? 'checked' : ''; ?>>
                                         <span class="slider"></span>
                                     </label>
                                     <div class="setting-info">
@@ -129,7 +174,7 @@ if ($_POST) {
                                 
                                 <div class="setting-item">
                                     <label class="switch">
-                                        <input type="checkbox" name="show_online_status" checked>
+                                        <input type="checkbox" name="show_online_status" <?php echo isset($user_settings['show_online_status']) && $user_settings['show_online_status'] ? 'checked' : ''; ?>>
                                         <span class="slider"></span>
                                     </label>
                                     <div class="setting-info">
@@ -140,7 +185,7 @@ if ($_POST) {
                                 
                                 <div class="setting-item">
                                     <label class="switch">
-                                        <input type="checkbox" name="allow_messages">
+                                        <input type="checkbox" name="allow_messages" <?php echo isset($user_settings['allow_messages']) && $user_settings['allow_messages'] ? 'checked' : ''; ?>>
                                         <span class="slider"></span>
                                     </label>
                                     <div class="setting-info">
@@ -149,7 +194,6 @@ if ($_POST) {
                                     </div>
                                 </div>
                             </div>
-                        </form>
                     </div>
                     
                     <div class="settings-section">
@@ -162,9 +206,9 @@ if ($_POST) {
                                         <p>Choose your preferred theme</p>
                                     </div>
                                     <select name="theme" class="setting-select">
-                                        <option value="light" selected>Light Theme</option>
-                                        <option value="dark">Dark Theme</option>
-                                        <option value="auto">Auto (System)</option>
+                                        <option value="light" <?php echo (isset($user_settings['theme']) && $user_settings['theme'] === 'light') ? 'selected' : ''; ?>>Light Theme</option>
+                                        <option value="dark" <?php echo (isset($user_settings['theme']) && $user_settings['theme'] === 'dark') ? 'selected' : ''; ?>>Dark Theme</option>
+                                        <option value="auto" <?php echo (isset($user_settings['theme']) && $user_settings['theme'] === 'auto') ? 'selected' : ''; ?>>Auto (System)</option>
                                     </select>
                                 </div>
                                 
@@ -174,14 +218,13 @@ if ($_POST) {
                                         <p>Select your preferred language</p>
                                     </div>
                                     <select name="language" class="setting-select">
-                                        <option value="en" selected>English</option>
-                                        <option value="es">Español</option>
-                                        <option value="fr">Français</option>
-                                        <option value="de">Deutsch</option>
+                                        <option value="en" <?php echo (isset($user_settings['language']) && $user_settings['language'] === 'en') ? 'selected' : ''; ?>>English</option>
+                                        <option value="es" <?php echo (isset($user_settings['language']) && $user_settings['language'] === 'es') ? 'selected' : ''; ?>>Español</option>
+                                        <option value="fr" <?php echo (isset($user_settings['language']) && $user_settings['language'] === 'fr') ? 'selected' : ''; ?>>Français</option>
+                                        <option value="de" <?php echo (isset($user_settings['language']) && $user_settings['language'] === 'de') ? 'selected' : ''; ?>>Deutsch</option>
                                     </select>
                                 </div>
                             </div>
-                        </form>
                     </div>
                     
                     <div class="settings-section">

@@ -1,27 +1,59 @@
 <?php
 session_start();
 
-// Simple user authentication (in real app, use database)
-$users = [
-    'student@example.com' => ['password' => 'password123', 'role' => 'student', 'name' => 'John Doe'],
-    'tutor@example.com' => ['password' => 'password123', 'role' => 'tutor', 'name' => 'Jane Smith'],
-    'admin@example.com' => ['password' => 'password123', 'role' => 'admin', 'name' => 'Admin User']
-];
+// Include existing DB connection (db_connect.php) at the top of login.php.
+require_once __DIR__ . '/db_connect.php';
 
 if ($_POST) {
-    $email = $_POST['email'] ?? '';
+    $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
-    
-    if (isset($users[$email]) && $users[$email]['password'] === $password) {
-        $_SESSION['user_email'] = $email;
-        $_SESSION['user_role'] = $users[$email]['role'];
-        $_SESSION['user_name'] = $users[$email]['name'];
-        header('Location: dashboard.php');
-        exit;
-    } else {
-        $error = 'Invalid email or password';
+
+    try {
+        // Try students table
+        $stmt = $pdo->prepare("SELECT id, name, email, password, role FROM students WHERE email = ? LIMIT 1");
+        $stmt->execute([$email]);
+        $user = $stmt->fetch();
+        $source = 'student';
+
+        // If not found, try tutors table
+        if (!$user) {
+            $stmt = $pdo->prepare("SELECT id, name, email, password, role FROM tutors WHERE email = ? LIMIT 1");
+            $stmt->execute([$email]);
+            $user = $stmt->fetch();
+            $source = 'tutor';
+        }
+
+        if ($user) {
+            $stored = $user['password'];
+
+            // Accept either hashed passwords or plain text (for simple local setups)
+            $valid = false;
+            if (!empty($stored) && password_verify($password, $stored)) {
+                $valid = true;
+            } elseif ($password === $stored) {
+                $valid = true;
+            }
+
+            if ($valid) {
+                $_SESSION['user_email'] = $user['email'];
+                $_SESSION['user_name'] = $user['name'];
+                // Use role from DB if present, otherwise infer from source table
+                $_SESSION['user_role'] = !empty($user['role']) ? $user['role'] : ($source === 'tutor' ? 'tutor' : 'student');
+                header('Location: dashboard.php');
+                exit;
+            } else {
+                $error = 'Invalid email or password';
+            }
+        } else {
+            $error = 'Invalid email or password';
+        }
+    } catch (Exception $e) {
+        $error = 'Login error: please try again';
     }
 }
+
+// show optional created message (keep near top of HTML output)
+$created = isset($_GET['created']) ? true : false;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -47,6 +79,12 @@ if ($_POST) {
                 <?php if (isset($error)): ?>
                     <div class="error-message">
                         <?php echo htmlspecialchars($error); ?>
+                    </div>
+                <?php endif; ?>
+                
+                <?php if ($created): ?>
+                    <div class="success-message">
+                        Account created successfully — please sign in.
                     </div>
                 <?php endif; ?>
                 
@@ -76,11 +114,11 @@ if ($_POST) {
                         <a href="#" class="forgot-password">Forgot password?</a>
                     </div>
                     
-                    <button type="submit" class="login-btn">Sign In</button>
+                    <button type="submit" class="login-btn">Log In</button>
                 </form>
                 
                 <div class="signup-link">
-                    <p>Don't have an account? <a href="#" class="signup-btn">Sign up here</a></p>
+                    <p>Don't have an account? <a href="signup.php" class="signup-btn">Sign up here</a></p>
                 </div>
                 
                 <div class="user-type-info">

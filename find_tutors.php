@@ -11,39 +11,37 @@ $user_name = $_SESSION['user_name'];
 $user_role = $_SESSION['user_role'];
 $user_email = $_SESSION['user_email'];
 
-// Sample tutors data (in real app, fetch from database)
-$tutors = [
-    [
-        'id' => 1,
-        'name' => 'Dr. Sarah Johnson',
-        'subjects' => ['Mathematics', 'Statistics'],
-        'rating' => 4.9,
-        'hourly_rate' => 25,
-        'experience' => '5+ years',
-        'bio' => 'PhD in Mathematics with extensive tutoring experience. Specializes in calculus and linear algebra.',
-        'available' => true
-    ],
-    [
-        'id' => 2,
-        'name' => 'Prof. Mike Chen',
-        'subjects' => ['Physics', 'Engineering'],
-        'rating' => 4.8,
-        'hourly_rate' => 30,
-        'experience' => '8+ years',
-        'bio' => 'Professor of Physics with expertise in quantum mechanics and thermodynamics.',
-        'available' => true
-    ],
-    [
-        'id' => 3,
-        'name' => 'Dr. Emma Wilson',
-        'subjects' => ['Chemistry', 'Biochemistry'],
-        'rating' => 4.7,
-        'hourly_rate' => 28,
-        'experience' => '6+ years',
-        'bio' => 'Chemistry researcher specializing in organic chemistry and biochemical processes.',
-        'available' => false
-    ]
-];
+require_once __DIR__ . '/db_connect.php';
+
+// Load tutors from database
+$tutors = [];
+try {
+    $stmt = $pdo->query("SELECT id, name, email, subjects, bio, settings FROM tutors ORDER BY id ASC");
+    $dbTutors = $stmt->fetchAll();
+    foreach ($dbTutors as $row) {
+        $subjects = [];
+        if (!empty($row['subjects'])) {
+            $subjects = array_map('trim', explode(',', $row['subjects']));
+        }
+        $settings = [];
+        if (!empty($row['settings'])) {
+            $settings = json_decode($row['settings'], true) ?: [];
+        }
+        $tutors[] = [
+            'id' => (int)$row['id'],
+            'name' => $row['name'],
+            'subjects' => $subjects,
+            'rating' => isset($settings['rating']) ? (float)$settings['rating'] : 4.8,
+            'hourly_rate' => isset($settings['hourly_rate']) ? (int)$settings['hourly_rate'] : 25,
+            'experience' => $settings['experience'] ?? '3+ years',
+            'bio' => $row['bio'] ?? '',
+            'available' => isset($settings['available']) ? (bool)$settings['available'] : true
+        ];
+    }
+} catch (Exception $e) {
+    // On error, show no tutors (or log $e->getMessage() in real app)
+    $tutors = [];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">

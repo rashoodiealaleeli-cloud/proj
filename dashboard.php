@@ -10,6 +10,61 @@ if (!isset($_SESSION['user_email'])) {
 $user_name = $_SESSION['user_name'];
 $user_role = $_SESSION['user_role'];
 $user_email = $_SESSION['user_email'];
+
+require_once __DIR__ . '/db_connect.php'; // <-- new: use existing DB connection
+
+// Ensure demo data exists and load tutors + boards for display
+try {
+	// Insert sample tutors if fewer than 3 exist
+	$stmt = $pdo->query("SELECT COUNT(*) AS cnt FROM tutors");
+	$cnt = (int) ($stmt->fetch()['cnt'] ?? 0);
+	if ($cnt < 3) {
+		$sampleTutors = [
+			['Alice Thompson','alice.tutor@example.com','password123','Mathematics, Calculus'],
+			['Brian Lee','brian.tutor@example.com','password123','Physics, Mechanics'],
+			['Carla Gomez','carla.tutor@example.com','password123','Chemistry, Organic Chemistry'],
+		];
+		$ins = $pdo->prepare("INSERT IGNORE INTO tutors (name,email,password,subjects,role,settings) VALUES (?,?,?,?,?,?)");
+		foreach ($sampleTutors as $t) {
+			$ins->execute([
+				$t[0],
+				$t[1],
+				password_hash($t[2], PASSWORD_DEFAULT),
+				$t[3],
+				'tutor',
+				json_encode(new stdClass())
+			]);
+		}
+	}
+
+	// Insert sample boards/courses if fewer than 3 exist
+	$stmt = $pdo->query("SELECT COUNT(*) AS cnt FROM boards");
+	$bCnt = (int) ($stmt->fetch()['cnt'] ?? 0);
+	if ($bCnt < 3) {
+		// get first three tutor ids
+		$tstmt = $pdo->query("SELECT id FROM tutors ORDER BY id ASC LIMIT 3");
+		$tutors = $tstmt->fetchAll();
+		$courses = [
+			['Calculus 101','Intro to derivatives and integrals'],
+			['Physics Mechanics','Newtonian mechanics basics'],
+			['Organic Chemistry Basics','Structure and reactions overview'],
+		];
+		$insB = $pdo->prepare("INSERT IGNORE INTO boards (title,content,user_id,user_role) VALUES (?,?,?,?)");
+		foreach ($courses as $i => $c) {
+			$tutorId = $tutors[$i]['id'] ?? ($tutors[0]['id'] ?? 1);
+			$insB->execute([$c[0], $c[1], $tutorId, 'tutor']);
+		}
+	}
+
+	// Load tutors and boards for display
+	$tutorsList = $pdo->query("SELECT id,name,subjects,email FROM tutors ORDER BY id ASC LIMIT 10")->fetchAll();
+	$boardsList = $pdo->query("SELECT boards.id,boards.title,boards.content,boards.user_id, tutors.name AS tutor_name FROM boards LEFT JOIN tutors ON boards.user_id = tutors.id ORDER BY boards.created_at DESC LIMIT 10")->fetchAll();
+
+} catch (Exception $e) {
+	// silent fail for demo; in production log the error
+	$tutorsList = [];
+	$boardsList = [];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -77,6 +132,41 @@ $user_email = $_SESSION['user_email'];
                 <?php if ($user_role === 'student'): ?>
                     <div class="role-specific-content">
                         <h2>Student Dashboard</h2>
+
+                        <!-- NEW: Available Tutors & Courses -->
+                        <div class="section-card">
+                            <h3><i class="fas fa-chalkboard-teacher"></i> Available Tutors & Courses</h3>
+                            <div class="tutors-grid">
+                                <?php if (!empty($tutorsList)): ?>
+                                    <?php foreach ($tutorsList as $t): ?>
+                                        <div class="tutor-card">
+                                            <div class="tutor-name"><?php echo htmlspecialchars($t['name']); ?></div>
+                                            <div class="tutor-subjects"><?php echo htmlspecialchars($t['subjects']); ?></div>
+                                            <div class="tutor-email"><?php echo htmlspecialchars($t['email']); ?></div>
+                                            <a href="tutor_profile.php?id=<?php echo (int)$t['id']; ?>" class="view-profile-btn">View Profile</a>
+                                        </div>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <p>No tutors available right now.</p>
+                                <?php endif; ?>
+                            </div>
+
+                            <h4 style="margin-top:16px;">Courses</h4>
+                            <div class="course-list">
+                                <?php if (!empty($boardsList)): ?>
+                                    <?php foreach ($boardsList as $b): ?>
+                                        <div class="course-item">
+                                            <div class="course-title"><?php echo htmlspecialchars($b['title']); ?></div>
+                                            <div class="course-tutor">Tutor: <?php echo htmlspecialchars($b['tutor_name'] ?? 'Unknown'); ?></div>
+                                            <div class="course-desc"><?php echo htmlspecialchars($b['content']); ?></div>
+                                            <a href="view_board.php?id=<?php echo (int)$b['id']; ?>" class="enter-course-btn">Open Course</a>
+                                        </div>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <p>No courses found.</p>
+                                <?php endif; ?>
+                            </div>
+                        </div>
                         
                         <div class="student-sections">
                             <div class="section-card">
